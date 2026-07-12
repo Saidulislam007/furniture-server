@@ -197,7 +197,6 @@ app.get('/api/v1/users', async (req: Request, res: Response): Promise<void> => {
 
 
 
-
     // Send a ping to confirm a successful 
     await client.db("admin").command({ ping: 1 });
     console.log("⚡ [Database]: Pinged your deployment. You successfully connected to MongoDB!");
