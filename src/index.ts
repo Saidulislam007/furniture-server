@@ -196,6 +196,53 @@ app.get('/api/v1/users', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// 🚀 ১. কার্টে প্রোডাক্ট অ্যাড করার POST API
+app.post('/api/v1/cart', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const cartCollection = database.collection("cart"); // 🛒 কার্ট কালেকশন নোড
+    const cartItem = req.body;
+
+    // একই ইউজার একই প্রোডাক্ট অলরেডি কার্টে যোগ করেছে কিনা চেক করা হচ্ছে
+    const query = { userId: cartItem.userId, productId: cartItem.productId };
+    const existingItem = await cartCollection.findOne(query);
+
+    if (existingItem) {
+      // যদি অলরেডি থাকে তবে কোয়ান্টিটি ১ বাড়িয়ে দেওয়া হচ্ছে
+      const updatedResult = await cartCollection.updateOne(
+        query,
+        { $inc: { quantity: 1 } }
+      );
+      res.status(200).json({ success: true, message: "Cart product quantity incremented successfully." });
+    } else {
+      // না থাকলে নতুন ডকুমেন্ট হিসেবে ইনসার্ট হচ্ছে
+      const result = await cartCollection.insertOne({
+        ...cartItem,
+        quantity: 1,
+        addedAt: new Date()
+      });
+      res.status(201).json({ success: true, message: "Product successfully mapped to the user cart matrix." });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🚀 ২. স্পেসিফিক ইউজারের কার্ট ডাটা তুলে আনার GET API
+app.get('/api/v1/cart/:userId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const cartCollection = database.collection("cart");
+    const userId = req.params.userId;
+
+    const result = await cartCollection.find({ userId: userId }).toArray();
+    res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+
+
     // Send a ping to confirm a successful 
     await client.db("admin").command({ ping: 1 });
     console.log("⚡ [Database]: Pinged your deployment. You successfully connected to MongoDB!");
