@@ -197,30 +197,40 @@ app.get('/api/v1/users', async (req: Request, res: Response): Promise<void> => {
 });
 
 // 🚀 ১. কার্টে প্রোডাক্ট অ্যাড করার POST API
+
 app.post('/api/v1/cart', async (req: Request, res: Response): Promise<void> => {
   try {
-    const cartCollection = database.collection("cart"); // 🛒 কার্ট কালেকশন নোড
+    const cartCollection = database.collection("cart");
     const cartItem = req.body;
 
-    // একই ইউজার একই প্রোডাক্ট অলরেডি কার্টে যোগ করেছে কিনা চেক করা হচ্ছে
-    const query = { userId: cartItem.userId, productId: cartItem.productId };
+    const query = { 
+      userId: String(cartItem.userId), 
+      productId: String(cartItem.productId) 
+    };
+    
     const existingItem = await cartCollection.findOne(query);
 
     if (existingItem) {
-      // যদি অলরেডি থাকে তবে কোয়ান্টিটি ১ বাড়িয়ে দেওয়া হচ্ছে
-      const updatedResult = await cartCollection.updateOne(
-        query,
-        { $inc: { quantity: 1 } }
-      );
-      res.status(200).json({ success: true, message: "Cart product quantity incremented successfully." });
+      // ⚡ হুবহু একই প্রোডাক্ট দ্বিতীয়বার আসলে ইনসার্ট ব্লক করে ৪০৪/৪০০ রেসপন্স পাঠানো হচ্ছে
+      res.status(400).json({ 
+        success: false, 
+        error: "Product already exists in your cart node. Duplication restricted." 
+      });
     } else {
-      // না থাকলে নতুন ডকুমেন্ট হিসেবে ইনসার্ট হচ্ছে
-      const result = await cartCollection.insertOne({
-        ...cartItem,
+      // ⚡ নতুন আলাদা প্রোডাক্ট হলে মঙ্গোডিবিতে ফ্রেশ ডকুমেন্ট ইনসার্ট হবে
+      await cartCollection.insertOne({
+        userId: String(cartItem.userId),
+        userName: cartItem.userName,
+        userEmail: cartItem.userEmail,
+        productId: String(cartItem.productId),
+        title: cartItem.title,
+        price: Number(cartItem.price),
+        image: cartItem.image,
+        color: cartItem.color,
         quantity: 1,
         addedAt: new Date()
       });
-      res.status(201).json({ success: true, message: "Product successfully mapped to the user cart matrix." });
+      res.status(201).json({ success: true, message: "Successfully added to cart." });
     }
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -239,6 +249,45 @@ app.get('/api/v1/cart/:userId', async (req: Request, res: Response): Promise<voi
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// 🚀 ১. নতুন অর্ডার/ডেলিভারি বুকিং করার POST API
+app.post('/api/v1/deliveries', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const deliveriesCollection = database.collection("deliveries");
+    const deliveryPayload = req.body;
+
+    // সিকিউরিটি গার্ড চেক
+    if (!deliveryPayload.userId || !deliveryPayload.productId) {
+      res.status(400).json({ success: false, error: "Missing required booking nodes." });
+      return;
+    }
+
+    // ডাটাবেজে ইনসার্ট (ডেলিভারি স্ট্যাটাস বাই-ডিফল্ট 'Pending' সেট করা হচ্ছে)
+    const result = await deliveriesCollection.insertOne({
+      ...deliveryPayload,
+      status: "Pending", // 👈 ডিফল্ট অপারেশনাল স্টেট
+      createdAt: new Date()
+    });
+
+    res.status(201).json({ success: true, message: "Order processed and delivery node spawned." });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🚀 ২. সুনির্দিষ্ট ইউজারের অর্ডার হিস্ট্রি/ডেলিভারি ট্র্যাক করার GET API
+app.get('/api/v1/deliveries/:userId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const deliveriesCollection = database.collection("deliveries");
+    const userId = req.params.userId;
+
+    const result = await deliveriesCollection.find({ userId: userId }).toArray();
+    res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 
 
