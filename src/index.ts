@@ -275,6 +275,28 @@ app.post('/api/v1/deliveries', async (req: Request, res: Response): Promise<void
   }
 });
 
+// 🚀 ৩. ম্যানেজার/অ্যাডমিন প্যানেলের জন্য সব ডেলিভারি ডাটা তুলে আনার গ্লোবাল GET API
+app.get('/api/v1/deliveries', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const deliveriesCollection = database.collection("deliveries");
+
+    // ⚡ কালেকশনের সব ডাটা ক্রিয়েশন ডেট অনুযায়ী লেটেস্ট অর্ডারের ক্রমানুসারে (Descending) সাজিয়ে আনা হচ্ছে
+    const result = await deliveriesCollection
+      .find({})
+      .sort({ createdAt: -1 }) 
+      .toArray();
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Universal logistics repository resolved successfully.", 
+      data: result 
+    });
+  } catch (error: any) {
+    console.error("❌ Failed to fetch universal deliveries registry:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 🚀 ২. সুনির্দিষ্ট ইউজারের অর্ডার হিস্ট্রি/ডেলিভারি ট্র্যাক করার GET API
 app.get('/api/v1/deliveries/:userId', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -283,6 +305,42 @@ app.get('/api/v1/deliveries/:userId', async (req: Request, res: Response): Promi
 
     const result = await deliveriesCollection.find({ userId: userId }).toArray();
     res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+// 🚀 ম্যানেজারের স্ট্যাটাস আপডেট পাইপলাইনের জন্য PATCH API
+app.patch('/api/v1/deliveries/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const deliveriesCollection = database.collection("deliveries");
+    const deliveryId = req.params.id;
+    const { status } = req.body; // ফ্রন্টএন্ড থেকে নতুন স্ট্যাটাস পাঠানো হবে
+
+    if (!status) {
+      res.status(400).json({ success: false, error: "Status specification missing." });
+      return;
+    }
+
+    const { ObjectId } = require('mongodb');
+    const query = { _id: new ObjectId(deliveryId) };
+
+    const updateResult = await deliveriesCollection.updateOne(
+      query,
+      { 
+        $set: { 
+          status: status, // 'Pending' | 'Dispatched' | 'Delivered'
+          updatedAt: new Date()
+        } 
+      }
+    );
+
+    if (updateResult.modifiedCount === 0) {
+      res.status(404).json({ success: false, error: "Delivery node not found or state unchanged." });
+    } else {
+      res.status(200).json({ success: true, message: "Logistics pipeline state committed successfully." });
+    }
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
