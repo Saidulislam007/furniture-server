@@ -297,8 +297,6 @@ app.get('/api/v1/deliveries', async (req: Request, res: Response): Promise<void>
   }
 });
 
-
-
 // 🚀 ২. সুনির্দিষ্ট ইউজারের অর্ডার হিস্ট্রি/ডেলিভারি ট্র্যাক করার GET API
 app.get('/api/v1/deliveries/:userId', async (req: Request, res: Response): Promise<void> => {
   try {
