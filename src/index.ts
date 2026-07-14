@@ -53,6 +53,7 @@ async function run(): Promise<void> {
 
     database = client.db("furniture-server");
     jobsCollection = database.collection("furniture");
+    const contactMessagesCollection = database.collection('contact-messages');
 
     const usersCollection = database.collection("user");
     const reviewsCollection = database.collection("reviews");
@@ -397,6 +398,67 @@ async function run(): Promise<void> {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+
+
+
+    app.post('/api/v1/contact', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const contactPayload = req.body;
+
+    // 🔒 এক্সপ্রেস স্ট্যান্ডার্ডে স্ট্রিক্ট ব্যাকএন্ড ভ্যালিডেশন গার্ড ভাই
+    if (!contactPayload.name || !contactPayload.email || !contactPayload.subject || !contactPayload.message) {
+      res.status(400).json({ 
+        success: false, 
+        error: "Missing required contact specification fields." 
+      });
+      return;
+    }
+
+    // 🎯 মঙ্গোডিবি কালেকশনে টাইমস্ট্যাম্প এবং ডিফল্ট স্ট্যাটাস সহ ডেটা ইনসার্ট করা হলো ভাই
+  await contactMessagesCollection.insertOne({
+  name: contactPayload.name,
+  email: contactPayload.email,
+  phone: contactPayload.phone, // 👈 ব্যাকএন্ডের মঙ্গোডিবি অবজেক্টেও এটি সেভ হবে
+  subject: contactPayload.subject,
+  message: contactPayload.message,
+  status: "Unread",
+  createdAt: new Date()
+});
+
+    res.status(201).json({ 
+      success: true, 
+      message: "Message transmitted and ledger record deployed successfully." 
+    });
+  } catch (error: any) {
+    console.error("❌ Critical failure in contact post pipeline:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+app.get('/api/v1/contact', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // 🎯 মঙ্গোডিবি থেকে সব মেসেজ নতুন থেকে পুরানো ক্রোনোলজিক্যাল অর্ডারে সর্ট করে অ্যারেতে কনভার্ট করা হলো ভাই
+    const messages = await contactMessagesCollection
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json({ 
+      success: true, 
+      data: messages 
+    });
+  } catch (error: any) {
+    console.error("❌ Failed to pull contact ledger logs:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
