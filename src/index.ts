@@ -11,8 +11,21 @@ const app = express();
 const port: number = Number(process.env.PORT) || 5000;
 
 // Middleware Setup
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = [process.env.FRONTEND_URL]; // আপনার ফ্রন্টএন্ডের ডোমেইন এখানে দিন
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // অরিজিন না থাকলে (যেমন পোস্টম্যান থেকে রিকোয়েস্ট) এলাও করা অথবা অরিজিন লিস্টে থাকলে এলাও করা
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // এটি খুবই জরুরি, কারণ আপনি সেশন/অথেন্টিকেশন ব্যবহার করছেন
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Base Health Check Route
 app.get('/', (req: Request, res: Response) => {
@@ -248,7 +261,7 @@ async function run(): Promise<void> {
     });
 
 
-    
+
     // ========================================================
     app.patch('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
       try {
