@@ -298,40 +298,72 @@ async function run(): Promise<void> {
     // ========================================================
     // 🛒 Cart POST API
     // ========================================================
-    app.post('/api/v1/cart', async (req: Request, res: Response): Promise<void> => {
-      try {
-        console.log("========== NEW VERSION ==========");
-  console.log(req.body);
+   app.post("/api/v1/deliveries", async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log("========== NEW VERSION ==========");
+    console.log("Headers:", req.headers["content-type"]);
+    console.log("Body:", req.body);
 
-  return res.json({
-    success: true,
-    message: "TEST OK",
-  });
-        const cartItem = req.body;
-        const query = { userId: String(cartItem.userId), productId: String(cartItem.productId) };
-        const existingItem = await cartCollection.findOne(query);
+    // req.body আছে কিনা চেক
+    if (!req.body) {
+      res.status(400).json({
+        success: false,
+        error: "Request body is missing",
+      });
+      return;
+    }
 
-        if (existingItem) {
-          res.status(400).json({ success: false, error: "Product already exists in your cart. Duplication restricted." });
-        } else {
-          await cartCollection.insertOne({
-            userId: String(cartItem.userId),
-            userName: cartItem.userName,
-            userEmail: cartItem.userEmail,
-            productId: String(cartItem.productId),
-            title: cartItem.title,
-            price: Number(cartItem.price),
-            image: cartItem.image,
-            color: cartItem.color,
-            quantity: 1,
-            addedAt: new Date()
-          });
-          res.status(201).json({ success: true, message: "Successfully added to cart." });
-        }
-      } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
-      }
+    const {
+      userId,
+      userName,
+      userEmail,
+      productId,
+      title,
+      price,
+      deliveryFee,
+      image,
+      color,
+    } = req.body;
+
+    // Required field validation
+    if (!userId || !productId) {
+      res.status(400).json({
+        success: false,
+        error: "Missing required fields: userId or productId",
+      });
+      return;
+    }
+
+    const deliveryData = {
+      userId: String(userId),
+      userName: userName || "Guest",
+      userEmail: userEmail || "No Email",
+      productId: String(productId),
+      title,
+      price: Number(price) || 0,
+      deliveryFee: Number(deliveryFee) || 0,
+      image,
+      color: color || "Default",
+      status: "Pending",
+      createdAt: new Date(),
+    };
+
+    const result = await deliveriesCollection.insertOne(deliveryData);
+
+    res.status(201).json({
+      success: true,
+      insertedId: result.insertedId,
+      message: "Delivery created successfully",
     });
+  } catch (error: any) {
+    console.error("❌ DELIVERY API ERROR:", error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
     // ========================================================
     // 🛒 Cart GET API By User ID
