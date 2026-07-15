@@ -52,15 +52,22 @@ async function run() {
         const furnitureCollection = exports.database.collection("furniture");
         const usersCollection = exports.database.collection("users");
         const reviewsCollection = exports.database.collection("reviews");
+        console.log("✅ Registering PATCH /api/v1/users/:id");
         // ========================================================
         // 🚀 ইউজারের প্রোফাইল আইডেন্টিটি এবং অল সাব-ক্যাটালগ ক্যাসকেড PATCH API
         // ========================================================
         app.patch('/api/v1/users/:id', async (req, res) => {
+            console.log("🔥 PATCH USER HIT");
+            console.log("Params:", req.params);
+            console.log("Body:", req.body);
             try {
                 const userId = String(req.params.id);
                 const { name, email, image } = req.body;
                 if (!name || !email) {
-                    res.status(400).json({ success: false, error: "Legal Name and Secure Email are required." });
+                    res.status(400).json({
+                        success: false,
+                        error: "Legal Name and Secure Email are required."
+                    });
                     return;
                 }
                 const userQuery = {
@@ -69,9 +76,14 @@ async function run() {
                         { _id: mongodb_2.ObjectId.isValid(userId) ? new mongodb_2.ObjectId(userId) : userId }
                     ]
                 };
+                console.log("🔍 User Query:", userQuery);
                 const dbUserSnapshot = await usersCollection.findOne(userQuery);
+                console.log("👤 DB User:", dbUserSnapshot);
                 if (!dbUserSnapshot) {
-                    res.status(404).json({ success: false, error: "User profile identity not found." });
+                    res.status(404).json({
+                        success: false,
+                        error: "User profile identity not found."
+                    });
                     return;
                 }
                 const dbOldEmail = dbUserSnapshot.email;
@@ -85,7 +97,9 @@ async function run() {
                     }
                 });
                 const cleanStringId = String(userId);
-                const nativeObjectId = mongodb_2.ObjectId.isValid(userId) ? new mongodb_2.ObjectId(userId) : null;
+                const nativeObjectId = mongodb_2.ObjectId.isValid(userId)
+                    ? new mongodb_2.ObjectId(userId)
+                    : null;
                 const subCollectionFilter = {
                     $or: [
                         { userId: cleanStringId },
@@ -111,8 +125,13 @@ async function run() {
                 });
             }
             catch (error) {
-                console.error("❌ Critical failure during dynamic string-identity sync:", error);
-                res.status(500).json({ success: false, error: error.message });
+                console.error("❌ Critical failure during dynamic string-identity sync:");
+                console.error(error);
+                console.error(error.stack);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
             }
         });
         // ========================================================
