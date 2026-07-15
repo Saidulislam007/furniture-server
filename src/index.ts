@@ -76,7 +76,7 @@ async function run(): Promise<void> {
     // ========================================================
     app.patch('/api/v1/users/:id', async (req: Request, res: Response): Promise<void> => {
       try {
-        const userId = req.params.id;
+        const userId = String(req.params.id);
         const { name, email, image } = req.body;
 
         if (!name || !email) {
@@ -201,31 +201,49 @@ async function run(): Promise<void> {
     // ========================================================
     // 🛋️ Furniture GET API (সিঙ্গেল প্রোডাক্ট আইডি দিয়ে ডাটা আনা ভাই)
     // ========================================================
-    app.get('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
-      try {
-        const { id } = req.params;
-        if (!ObjectId.isValid(id)) {
-          res.status(400).json({ success: false, error: "Invalid product specification node ID." });
-          return;
-        }
-        const singleProduct = await furnitureCollection.findOne({ _id: new ObjectId(id) });
-        if (!singleProduct) {
-          res.status(404).json({ success: false, error: "Target asset record not found." });
-          return;
-        }
-        res.status(200).json({ success: true, data: singleProduct });
-      } catch (error: any) {
-        console.error("❌ Failed to fetch single furniture node:", error);
-        res.status(500).json({ success: false, error: error.message });
-      }
+app.get('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+
+    if (!ObjectId.isValid(id)) {
+      res.status(400).json({
+        success: false,
+        error: "Invalid product specification node ID."
+      });
+      return;
+    }
+
+    const singleProduct = await furnitureCollection.findOne({
+      _id: new ObjectId(id)
     });
+
+    if (!singleProduct) {
+      res.status(404).json({
+        success: false,
+        error: "Target asset record not found."
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: singleProduct
+    });
+  } catch (error: any) {
+    console.error("❌ Failed to fetch single furniture node:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
     // ========================================================
     // 🛋️ Furniture DELETE API
     // ========================================================
     app.delete('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = req.params.id;
+        const id = String(req.params.id);
         const result = await furnitureCollection.deleteOne({ _id: new ObjectId(id) });
         if (result.deletedCount === 1) {
           res.status(200).json({ success: true, message: "Asset purged successfully." });
@@ -242,7 +260,7 @@ async function run(): Promise<void> {
     // ========================================================
     app.patch('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = req.params.id;
+        const id = String(req.params.id);
         const updatedData = req.body;
 
         if (!id) {
@@ -432,7 +450,7 @@ app.get('/api/v1/deliveries', async (req: Request, res: Response) => {
     // ========================================================
     app.patch('/api/v1/deliveries/:id', async (req: Request, res: Response): Promise<void> => {
       try {
-        const deliveryId = req.params.id;
+        const deliveryId = String(req.params.id);
         const { status } = req.body;
 
         if (!status) {

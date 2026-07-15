@@ -13,21 +13,15 @@ const mongodb_2 = require("mongodb");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const port = Number(process.env.PORT) || 5000;
+// 🛑 CRITICAL FIX: ফ্রন্টএন্ড থেকে পাঠানো JSON ডাটা পড়ার জন্য মিডলওয়্যার (এটিই মিসিং ছিল ভাই)
+app.use(express_1.default.json());
 // Middleware Setup
-const allowedOrigins = [process.env.FRONTEND_URL]; // আপনার ফ্রন্টএন্ডের ডোমেইন এখানে দিন
+const allowedOrigins = [process.env.FRONTEND_URL];
 app.use((0, cors_1.default)({
-    origin: function (origin, callback) {
-        // অরিজিন না থাকলে (যেমন পোস্টম্যান থেকে রিকোয়েস্ট) এলাও করা অথবা অরিজিন লিস্টে থাকলে এলাও করা
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        }
-        else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true, // এটি খুবই জরুরি, কারণ আপনি সেশন/অথেন্টিকেশন ব্যবহার করছেন
+    origin: "*", // সাময়িকভাবে সব ডোমেইন এলাউ করুন
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
 // Base Health Check Route
 app.get('/', (req, res) => {
@@ -53,33 +47,17 @@ async function run() {
         exports.database = client.db("furniture-server");
         exports.jobsCollection = exports.database.collection("furniture");
         const contactMessagesCollection = exports.database.collection('contact-messages');
-        const usersCollection = exports.database.collection("user");
-        const reviewsCollection = exports.database.collection("reviews");
         const deliveriesCollection = exports.database.collection("deliveries");
         const cartCollection = exports.database.collection("cart");
         const furnitureCollection = exports.database.collection("furniture");
-        // ========================================================
-        // 🏢 Users GET API
-        // ========================================================
-        app.get('/api/v1/users', async (req, res) => {
-            try {
-                const result = await usersCollection.find({}).sort({ _id: -1 }).toArray();
-                res.status(200).json({
-                    success: true,
-                    count: result.length,
-                    data: result
-                });
-            }
-            catch (error) {
-                res.status(500).json({ success: false, error: error.message || "Failed to retrieve user nodes." });
-            }
-        });
+        const usersCollection = exports.database.collection("users");
+        const reviewsCollection = exports.database.collection("reviews");
         // ========================================================
         // 🚀 ইউজারের প্রোফাইল আইডেন্টিটি এবং অল সাব-ক্যাটালগ ক্যাসকেড PATCH API
         // ========================================================
         app.patch('/api/v1/users/:id', async (req, res) => {
             try {
-                const userId = req.params.id;
+                const userId = String(req.params.id);
                 const { name, email, image } = req.body;
                 if (!name || !email) {
                     res.status(400).json({ success: false, error: "Legal Name and Secure Email are required." });
@@ -91,7 +69,6 @@ async function run() {
                         { _id: mongodb_2.ObjectId.isValid(userId) ? new mongodb_2.ObjectId(userId) : userId }
                     ]
                 };
-                // 🔍 ক্যাসকেড প্রটেকশন: আপডেট করার এক মিলি-সেকেন্ড আগে ডাটাবেজের কারেন্ট ওল্ড স্ন্যাপশট নেওয়া
                 const dbUserSnapshot = await usersCollection.findOne(userQuery);
                 if (!dbUserSnapshot) {
                     res.status(404).json({ success: false, error: "User profile identity not found." });
@@ -99,8 +76,7 @@ async function run() {
                 }
                 const dbOldEmail = dbUserSnapshot.email;
                 const dbOldName = dbUserSnapshot.name;
-                // মেইন প্রোফাইল সিঙ্ক
-                const userUpdateResult = await usersCollection.updateOne(userQuery, {
+                await usersCollection.updateOne(userQuery, {
                     $set: {
                         name: name.trim(),
                         email: email.trim().toLowerCase(),
@@ -108,7 +84,6 @@ async function run() {
                         updatedAt: new Date()
                     }
                 });
-                // আলটিমেট লুজ-ফিল্টার (স্ট্রিং আইডি + অবজেক্ট আইডি + ডাটাবেজের ওল্ড ইমেল/ওল্ড নেম)
                 const cleanStringId = String(userId);
                 const nativeObjectId = mongodb_2.ObjectId.isValid(userId) ? new mongodb_2.ObjectId(userId) : null;
                 const subCollectionFilter = {
@@ -126,7 +101,6 @@ async function run() {
                         userEmail: email.trim().toLowerCase()
                     }
                 };
-                // আলাদা আলাদা ধাপে ক্যাসকেড আপডেট এক্সিকিউশন
                 const reviewRes = await reviewsCollection.updateMany(subCollectionFilter, updatePayload);
                 const deliveryRes = await deliveriesCollection.updateMany(subCollectionFilter, updatePayload);
                 const cartRes = await cartCollection.updateMany(subCollectionFilter, updatePayload);
@@ -189,25 +163,39 @@ async function run() {
             }
         });
         // ========================================================
-        // 🛋️ 🟢 নতুন ফিক্স: Furniture GET API (সিঙ্গেল প্রোডাক্ট আইডি দিয়ে ডাটা আনা ভাই)
+        // 🛋️ Furniture GET API (সিঙ্গেল প্রোডাক্ট আইডি দিয়ে ডাটা আনা ভাই)
         // ========================================================
         app.get('/api/v1/furniture/:id', async (req, res) => {
             try {
-                const { id } = req.params;
+                const id = String(req.params.id);
                 if (!mongodb_2.ObjectId.isValid(id)) {
-                    res.status(400).json({ success: false, error: "Invalid product specification node ID." });
+                    res.status(400).json({
+                        success: false,
+                        error: "Invalid product specification node ID."
+                    });
                     return;
                 }
-                const singleProduct = await furnitureCollection.findOne({ _id: new mongodb_2.ObjectId(id) });
+                const singleProduct = await furnitureCollection.findOne({
+                    _id: new mongodb_2.ObjectId(id)
+                });
                 if (!singleProduct) {
-                    res.status(404).json({ success: false, error: "Target asset record not found." });
+                    res.status(404).json({
+                        success: false,
+                        error: "Target asset record not found."
+                    });
                     return;
                 }
-                res.status(200).json({ success: true, data: singleProduct });
+                res.status(200).json({
+                    success: true,
+                    data: singleProduct
+                });
             }
             catch (error) {
                 console.error("❌ Failed to fetch single furniture node:", error);
-                res.status(500).json({ success: false, error: error.message });
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
             }
         });
         // ========================================================
@@ -215,7 +203,7 @@ async function run() {
         // ========================================================
         app.delete('/api/v1/furniture/:id', async (req, res) => {
             try {
-                const id = req.params.id;
+                const id = String(req.params.id);
                 const result = await furnitureCollection.deleteOne({ _id: new mongodb_2.ObjectId(id) });
                 if (result.deletedCount === 1) {
                     res.status(200).json({ success: true, message: "Asset purged successfully." });
@@ -229,9 +217,11 @@ async function run() {
             }
         });
         // ========================================================
+        // 🛋️ Furniture PATCH API
+        // ========================================================
         app.patch('/api/v1/furniture/:id', async (req, res) => {
             try {
-                const id = req.params.id;
+                const id = String(req.params.id);
                 const updatedData = req.body;
                 if (!id) {
                     res.status(400).json({ success: false, error: "Product node ID is required." });
@@ -241,7 +231,6 @@ async function run() {
                     res.status(400).json({ success: false, error: "Update payload matrix cannot be empty." });
                     return;
                 }
-                // 🛠️ আইডি ক্লিনআপ এবং টাইপ কাস্টিং লক ভাই
                 delete updatedData._id;
                 if (updatedData.price !== undefined)
                     updatedData.price = Number(updatedData.price);
@@ -249,19 +238,16 @@ async function run() {
                     updatedData.deliveryFee = Number(updatedData.deliveryFee);
                 if (updatedData.stock !== undefined)
                     updatedData.stock = Number(updatedData.stock);
-                // 🔒 🟢 অরিজিনাল ফিক্স: মঙ্গোডিবি নেটিভ ড্রাইভারে $oid হ্যান্ডেল করার জন্য আইডি কুয়েরি লক করা হলো ভাই
                 let queryTarget = {};
                 if (mongodb_2.ObjectId.isValid(id)) {
                     queryTarget = { _id: new mongodb_2.ObjectId(id) };
                 }
                 else {
-                    queryTarget = { _id: id }; // সেফগার্ড হিসেবে প্লেইন স্ট্রিং আইডি চেকিং
+                    queryTarget = { _id: id };
                 }
-                // 🎯 ਮঙ্গোডিবিতে ডিরেক্ট অবজেক্ট আইডি কুয়েরি দিয়ে ডাটা পরিবর্তন ভাই
                 const result = await furnitureCollection.updateOne(queryTarget, { $set: updatedData });
-                // 🔍 যদি ডাটাবেজে এই আইডির কোনো ফার্নিচার ম্যাচ না করে
                 if (result.matchedCount === 0) {
-                    console.log(`⚠️ Database unmatched for ID: ${id}`); // ব্যাকএন্ড কনসোল ট্র্যাকিং
+                    console.log(`⚠️ Database unmatched for ID: ${id}`);
                     res.status(404).json({
                         success: false,
                         error: "Target asset record not found in central registry."
@@ -284,32 +270,54 @@ async function run() {
         // ========================================================
         // 🛒 Cart POST API
         // ========================================================
-        app.post('/api/v1/cart', async (req, res) => {
+        app.post("/api/v1/deliveries", async (req, res) => {
             try {
-                const cartItem = req.body;
-                const query = { userId: String(cartItem.userId), productId: String(cartItem.productId) };
-                const existingItem = await cartCollection.findOne(query);
-                if (existingItem) {
-                    res.status(400).json({ success: false, error: "Product already exists in your cart. Duplication restricted." });
-                }
-                else {
-                    await cartCollection.insertOne({
-                        userId: String(cartItem.userId),
-                        userName: cartItem.userName,
-                        userEmail: cartItem.userEmail,
-                        productId: String(cartItem.productId),
-                        title: cartItem.title,
-                        price: Number(cartItem.price),
-                        image: cartItem.image,
-                        color: cartItem.color,
-                        quantity: 1,
-                        addedAt: new Date()
+                console.log("========== NEW VERSION ==========");
+                console.log("Headers:", req.headers["content-type"]);
+                console.log("Body:", req.body);
+                // req.body আছে কিনা চেক
+                if (!req.body) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Request body is missing",
                     });
-                    res.status(201).json({ success: true, message: "Successfully added to cart." });
+                    return;
                 }
+                const { userId, userName, userEmail, productId, title, price, deliveryFee, image, color, } = req.body;
+                // Required field validation
+                if (!userId || !productId) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Missing required fields: userId or productId",
+                    });
+                    return;
+                }
+                const deliveryData = {
+                    userId: String(userId),
+                    userName: userName || "Guest",
+                    userEmail: userEmail || "No Email",
+                    productId: String(productId),
+                    title,
+                    price: Number(price) || 0,
+                    deliveryFee: Number(deliveryFee) || 0,
+                    image,
+                    color: color || "Default",
+                    status: "Pending",
+                    createdAt: new Date(),
+                };
+                const result = await deliveriesCollection.insertOne(deliveryData);
+                res.status(201).json({
+                    success: true,
+                    insertedId: result.insertedId,
+                    message: "Delivery created successfully",
+                });
             }
             catch (error) {
-                res.status(500).json({ success: false, error: error.message });
+                console.error("❌ DELIVERY API ERROR:", error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message,
+                });
             }
         });
         // ========================================================
@@ -325,44 +333,45 @@ async function run() {
             }
         });
         // ========================================================
-        // 🚚 Deliveries POST API
+        // 🚚 Deliveries POST API (ডুপ্লিকেট ক্লিন করে পারফেক্ট করা হলো ভাই)
         // ========================================================
+        // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
         app.post('/api/v1/deliveries', async (req, res) => {
             try {
-                const deliveryPayload = req.body;
-                if (!deliveryPayload.userId || !deliveryPayload.productId) {
-                    res.status(400).json({ success: false, error: "Missing required booking nodes." });
-                    return;
+                console.log("Raw Body Received:", req.body);
+                // ভ্যালিডেশন চেক করুন
+                if (!req.body.userId || !req.body.productId) {
+                    return res.status(400).json({ error: "Missing required fields: userId or productId" });
                 }
-                await deliveriesCollection.insertOne({
-                    ...deliveryPayload,
+                const deliveryData = {
+                    // যদি MongoDB তে আইডিObjectId হিসেবে লাগে, তবে new ObjectId(req.body.userId) ব্যবহার করুন
+                    userId: req.body.userId,
+                    userName: req.body.userName || "Guest",
+                    userEmail: req.body.userEmail || "No Email",
+                    productId: req.body.productId,
+                    title: req.body.title,
+                    price: Number(req.body.price) || 0,
+                    deliveryFee: Number(req.body.deliveryFee || 0),
+                    image: req.body.image,
+                    color: req.body.color || "Default",
                     status: "Pending",
                     createdAt: new Date()
-                });
-                res.status(201).json({ success: true, message: "Order processed successfully." });
+                };
+                const result = await deliveriesCollection.insertOne(deliveryData);
+                res.status(201).json({ success: true, insertedId: result.insertedId });
             }
             catch (error) {
-                res.status(500).json({ success: false, error: error.message });
-            }
-        });
-        // ========================================================
-        // 🚚 Deliveries Global GET API (For Managers)
-        // ========================================================
-        app.get('/api/v1/deliveries', async (req, res) => {
-            try {
-                const result = await deliveriesCollection.find({}).sort({ createdAt: -1 }).toArray();
-                res.status(200).json({ success: true, data: result });
-            }
-            catch (error) {
+                console.error("SERVER CRASH:", error);
                 res.status(500).json({ success: false, error: error.message });
             }
         });
         // ========================================================
         // 🚚 Deliveries GET API By User ID
         // ========================================================
-        app.get('/api/v1/deliveries/:userId', async (req, res) => {
+        // deliveries GET API - এটি থাকলে ব্রাউজারে ডাটা দেখতে পাবেন
+        app.get('/api/v1/deliveries', async (req, res) => {
             try {
-                const result = await deliveriesCollection.find({ userId: req.params.userId }).toArray();
+                const result = await deliveriesCollection.find({}).toArray();
                 res.status(200).json({ success: true, data: result });
             }
             catch (error) {
@@ -374,7 +383,7 @@ async function run() {
         // ========================================================
         app.patch('/api/v1/deliveries/:id', async (req, res) => {
             try {
-                const deliveryId = req.params.id;
+                const deliveryId = String(req.params.id);
                 const { status } = req.body;
                 if (!status) {
                     res.status(400).json({ success: false, error: "Status specification missing." });
@@ -394,7 +403,7 @@ async function run() {
             }
         });
         // ========================================================
-        // 📝 Reviews Universal GET API (🚀 🟢 নতুন ফিক্স: সব রিভিউ একসাথে নিয়ে আসা ভাই)
+        // 📝 Reviews Universal GET API
         // ========================================================
         app.get('/api/v1/reviews', async (req, res) => {
             try {
@@ -412,9 +421,7 @@ async function run() {
         app.post('/api/v1/reviews', async (req, res) => {
             try {
                 const reviewPayload = req.body;
-                // লগ দিয়ে চেক করুন আপনার ফ্রন্টএন্ড থেকে ঠিক কী আইডি আসছে
                 console.log("সাবমিট করা আইডি:", reviewPayload.productId);
-                // ফিক্স: যদি আইডিটি অবজেক্ট হিসেবে আসে (যেমন $oid), তবে সেটি স্ট্রিংয়ে কনভার্ট করুন
                 const finalProductId = typeof reviewPayload.productId === 'object'
                     ? reviewPayload.productId.$oid || reviewPayload.productId.toString()
                     : reviewPayload.productId;
@@ -422,7 +429,7 @@ async function run() {
                     userId: reviewPayload.userId,
                     userEmail: reviewPayload.userEmail || "N/A",
                     userName: reviewPayload.userName || "Anonymous User",
-                    productId: finalProductId, // এখানে নিশ্চিত করুন স্ট্রিং আইডি যাচ্ছে
+                    productId: finalProductId,
                     productName: reviewPayload.productName || "Curated Asset Architecture",
                     rating: Number(reviewPayload.rating),
                     comment: reviewPayload.comment.trim(),
@@ -440,8 +447,6 @@ async function run() {
         app.get('/api/v1/reviews/:productId', async (req, res) => {
             try {
                 const { productId } = req.params;
-                // ডাটাবেজে productId স্ট্রিং হিসেবে থাকলে এটি হুবহু ম্যাচ করবে
-                // যদি ObjectId হিসেবে থাকে, তবে নিচে নতুন ObjectId দিয়ে কুয়েরি করতে হবে
                 const productReviews = await reviewsCollection
                     .find({ productId: productId })
                     .sort({ createdAt: -1 })
