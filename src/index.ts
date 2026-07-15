@@ -55,11 +55,7 @@ interface ManagerAuthRequest extends Request {
     role: string;
   };
 }
-let deliveriesCollection: Collection;
-let cartCollection: Collection;
-let furnitureCollection: Collection;
-let usersCollection: Collection;
-let reviewsCollection: Collection;
+
 
 async function run(): Promise<void> {
   try {
@@ -69,13 +65,11 @@ async function run(): Promise<void> {
     database = client.db("furniture-server");
     jobsCollection = database.collection("furniture");
     const contactMessagesCollection = database.collection('contact-messages');
-    deliveriesCollection = database.collection("deliveries");
-    cartCollection = database.collection("cart");
-    furnitureCollection = database.collection("furniture");
-    usersCollection = database.collection("users");
-    reviewsCollection = database.collection("reviews");
-
-    console.log("⚡ [Database]: All collections initialized!");
+    const deliveriesCollection = database.collection("deliveries");
+    const cartCollection = database.collection("cart");
+    const furnitureCollection = database.collection("furniture");
+    const usersCollection = database.collection("users");
+    const reviewsCollection = database.collection("reviews");
 
     // ========================================================
     // 🚀 ইউজারের প্রোফাইল আইডেন্টিটি এবং অল সাব-ক্যাটালগ ক্যাসকেড PATCH API
