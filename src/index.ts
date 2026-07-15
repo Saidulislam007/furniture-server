@@ -10,19 +10,21 @@ dotenv.config();
 const app = express();
 const port: number = Number(process.env.PORT) || 5000;
 
+// 🛑 CRITICAL FIX: ফ্রন্টএন্ড থেকে পাঠানো JSON ডাটা পড়ার জন্য মিডলওয়্যার (এটিই মিসিং ছিল ভাই)
+app.use(express.json());
+
 // Middleware Setup
-const allowedOrigins = [process.env.FRONTEND_URL]; // আপনার ফ্রন্টএন্ডের ডোমেইন এখানে দিন
+const allowedOrigins = [process.env.FRONTEND_URL]; 
 
 app.use(cors({
   origin: function (origin, callback) {
-    // অরিজিন না থাকলে (যেমন পোস্টম্যান থেকে রিকোয়েস্ট) এলাও করা অথবা অরিজিন লিস্টে থাকলে এলাও করা
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true, // এটি খুবই জরুরি, কারণ আপনি সেশন/অথেন্টিকেশন ব্যবহার করছেন
+  credentials: true, 
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -67,28 +69,11 @@ async function run(): Promise<void> {
     database = client.db("furniture-server");
     jobsCollection = database.collection("furniture");
     const contactMessagesCollection = database.collection('contact-messages');
-
-    const usersCollection = database.collection("user");
-    const reviewsCollection = database.collection("reviews");
     const deliveriesCollection = database.collection("deliveries");
     const cartCollection = database.collection("cart");
     const furnitureCollection = database.collection("furniture");
-
-    // ========================================================
-    // 🏢 Users GET API
-    // ========================================================
-    app.get('/api/v1/users', async (req: Request, res: Response): Promise<void> => {
-      try {
-        const result = await usersCollection.find({}).sort({ _id: -1 }).toArray();
-        res.status(200).json({
-          success: true,
-          count: result.length,
-          data: result
-        });
-      } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message || "Failed to retrieve user nodes." });
-      }
-    });
+    const usersCollection = database.collection("users");
+    const reviewsCollection = database.collection("reviews");
 
     // ========================================================
     // 🚀 ইউজারের প্রোফাইল আইডেন্টিটি এবং অল সাব-ক্যাটালগ ক্যাসকেড PATCH API
@@ -110,7 +95,6 @@ async function run(): Promise<void> {
           ]
         };
 
-        // 🔍 ক্যাসকেড প্রটেকশন: আপডেট করার এক মিলি-সেকেন্ড আগে ডাটাবেজের কারেন্ট ওল্ড স্ন্যাপশট নেওয়া
         const dbUserSnapshot = await usersCollection.findOne(userQuery as any);
         if (!dbUserSnapshot) {
           res.status(404).json({ success: false, error: "User profile identity not found." });
@@ -120,8 +104,7 @@ async function run(): Promise<void> {
         const dbOldEmail = dbUserSnapshot.email;
         const dbOldName = dbUserSnapshot.name;
 
-        // মেইন প্রোফাইল সিঙ্ক
-        const userUpdateResult = await usersCollection.updateOne(
+        await usersCollection.updateOne(
           userQuery as any,
           {
             $set: {
@@ -133,7 +116,6 @@ async function run(): Promise<void> {
           }
         );
 
-        // আলটিমেট লুজ-ফিল্টার (স্ট্রিং আইডি + অবজেক্ট আইডি + ডাটাবেজের ওল্ড ইমেল/ওল্ড নেম)
         const cleanStringId = String(userId);
         const nativeObjectId = ObjectId.isValid(userId) ? new ObjectId(userId) : null;
 
@@ -154,7 +136,6 @@ async function run(): Promise<void> {
           }
         };
 
-        // আলাদা আলাদা ধাপে ক্যাসকেড আপডেট এক্সিকিউশন
         const reviewRes = await reviewsCollection.updateMany(subCollectionFilter, updatePayload);
         const deliveryRes = await deliveriesCollection.updateMany(subCollectionFilter, updatePayload);
         const cartRes = await cartCollection.updateMany(subCollectionFilter, updatePayload);
@@ -222,7 +203,7 @@ async function run(): Promise<void> {
     });
 
     // ========================================================
-    // 🛋️ 🟢 নতুন ফিক্স: Furniture GET API (সিঙ্গেল প্রোডাক্ট আইডি দিয়ে ডাটা আনা ভাই)
+    // 🛋️ Furniture GET API (সিঙ্গেল প্রোডাক্ট আইডি দিয়ে ডাটা আনা ভাই)
     // ========================================================
     app.get('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
       try {
@@ -260,8 +241,8 @@ async function run(): Promise<void> {
       }
     });
 
-
-
+    // ========================================================
+    // 🛋️ Furniture PATCH API
     // ========================================================
     app.patch('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
       try {
@@ -278,29 +259,25 @@ async function run(): Promise<void> {
           return;
         }
 
-        // 🛠️ আইডি ক্লিনআপ এবং টাইপ কাস্টিং লক ভাই
         delete updatedData._id; 
         if (updatedData.price !== undefined) updatedData.price = Number(updatedData.price);
         if (updatedData.deliveryFee !== undefined) updatedData.deliveryFee = Number(updatedData.deliveryFee);
         if (updatedData.stock !== undefined) updatedData.stock = Number(updatedData.stock);
 
-        // 🔒 🟢 অরিজিনাল ফিক্স: মঙ্গোডিবি নেটিভ ড্রাইভারে $oid হ্যান্ডেল করার জন্য আইডি কুয়েরি লক করা হলো ভাই
         let queryTarget = {};
         if (ObjectId.isValid(id)) {
           queryTarget = { _id: new ObjectId(id) };
         } else {
-          queryTarget = { _id: id }; // সেফগার্ড হিসেবে প্লেইন স্ট্রিং আইডি চেকিং
+          queryTarget = { _id: id }; 
         }
 
-        // 🎯 ਮঙ্গোডিবিতে ডিরেক্ট অবজেক্ট আইডি কুয়েরি দিয়ে ডাটা পরিবর্তন ভাই
         const result = await furnitureCollection.updateOne(
           queryTarget,
           { $set: updatedData }
         );
 
-        // 🔍 যদি ডাটাবেজে এই আইডির কোনো ফার্নিচার ম্যাচ না করে
         if (result.matchedCount === 0) {
-          console.log(`⚠️ Database unmatched for ID: ${id}`); // ব্যাকএন্ড কনসোল ট্র্যাকিং
+          console.log(`⚠️ Database unmatched for ID: ${id}`); 
           res.status(404).json({ 
             success: false, 
             error: "Target asset record not found in central registry." 
@@ -366,35 +343,23 @@ async function run(): Promise<void> {
     });
 
     // ========================================================
-    // 🚚 Deliveries POST API
+    // 🚚 Deliveries POST API (ডুপ্লিকেট ক্লিন করে পারফেক্ট করা হলো ভাই)
     // ========================================================
     app.post('/api/v1/deliveries', async (req: Request, res: Response): Promise<void> => {
       try {
         const deliveryPayload = req.body;
-        if (!deliveryPayload.userId || !deliveryPayload.productId) {
-          res.status(400).json({ success: false, error: "Missing required booking nodes." });
-          return;
-        }
+        console.log("📥 Incoming Deliveries Data:", deliveryPayload);
 
-        await deliveriesCollection.insertOne({
+        const result = await deliveriesCollection.insertOne({
           ...deliveryPayload,
           status: "Pending",
           createdAt: new Date()
         });
-        res.status(201).json({ success: true, message: "Order processed successfully." });
-      } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
-      }
-    });
 
-    // ========================================================
-    // 🚚 Deliveries Global GET API (For Managers)
-    // ========================================================
-    app.get('/api/v1/deliveries', async (req: Request, res: Response): Promise<void> => {
-      try {
-        const result = await deliveriesCollection.find({}).sort({ createdAt: -1 }).toArray();
-        res.status(200).json({ success: true, data: result });
+        console.log("✅ Order Data inserted with ID:", result.insertedId);
+        res.status(201).json({ success: true, message: "Order processed successfully.", insertedId: result.insertedId });
       } catch (error: any) {
+        console.error("❌ MongoDB Insert Error:", error);
         res.status(500).json({ success: false, error: error.message });
       }
     });
@@ -441,7 +406,7 @@ async function run(): Promise<void> {
     });
 
     // ========================================================
-    // 📝 Reviews Universal GET API (🚀 🟢 নতুন ফিক্স: সব রিভিউ একসাথে নিয়ে আসা ভাই)
+    // 📝 Reviews Universal GET API
     // ========================================================
     app.get('/api/v1/reviews', async (req: Request, res: Response): Promise<void> => {
       try {
@@ -456,54 +421,48 @@ async function run(): Promise<void> {
     // ========================================================
     // 📝 Reviews POST API
     // ========================================================
-app.post('/api/v1/reviews', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const reviewPayload = req.body;
-    
-    // লগ দিয়ে চেক করুন আপনার ফ্রন্টএন্ড থেকে ঠিক কী আইডি আসছে
-    console.log("সাবমিট করা আইডি:", reviewPayload.productId);
+    app.post('/api/v1/reviews', async (req: Request, res: Response): Promise<void> => {
+      try {
+        const reviewPayload = req.body;
+        console.log("সাবমিট করা আইডি:", reviewPayload.productId);
 
-    // ফিক্স: যদি আইডিটি অবজেক্ট হিসেবে আসে (যেমন $oid), তবে সেটি স্ট্রিংয়ে কনভার্ট করুন
-    const finalProductId = typeof reviewPayload.productId === 'object' 
-                           ? reviewPayload.productId.$oid || reviewPayload.productId.toString() 
-                           : reviewPayload.productId;
+        const finalProductId = typeof reviewPayload.productId === 'object' 
+                               ? reviewPayload.productId.$oid || reviewPayload.productId.toString() 
+                               : reviewPayload.productId;
 
-    await reviewsCollection.insertOne({
-      userId: reviewPayload.userId,
-      userEmail: reviewPayload.userEmail || "N/A",
-      userName: reviewPayload.userName || "Anonymous User",
-      productId: finalProductId, // এখানে নিশ্চিত করুন স্ট্রিং আইডি যাচ্ছে
-      productName: reviewPayload.productName || "Curated Asset Architecture",
-      rating: Number(reviewPayload.rating),
-      comment: reviewPayload.comment.trim(),
-      createdAt: new Date()
+        await reviewsCollection.insertOne({
+          userId: reviewPayload.userId,
+          userEmail: reviewPayload.userEmail || "N/A",
+          userName: reviewPayload.userName || "Anonymous User",
+          productId: finalProductId, 
+          productName: reviewPayload.productName || "Curated Asset Architecture",
+          rating: Number(reviewPayload.rating),
+          comment: reviewPayload.comment.trim(),
+          createdAt: new Date()
+        });
+
+        res.status(201).json({ success: true, message: "Review deployed successfully." });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
     });
-
-    res.status(201).json({ success: true, message: "Review deployed successfully." });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
     // ========================================================
     // 📝 Reviews GET API By Product ID
     // ========================================================
-  app.get('/api/v1/reviews/:productId', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { productId } = req.params;
+    app.get('/api/v1/reviews/:productId', async (req: Request, res: Response): Promise<void> => {
+      try {
+        const { productId } = req.params;
+        const productReviews = await reviewsCollection
+          .find({ productId: productId }) 
+          .sort({ createdAt: -1 })
+          .toArray();
 
-    // ডাটাবেজে productId স্ট্রিং হিসেবে থাকলে এটি হুবহু ম্যাচ করবে
-    // যদি ObjectId হিসেবে থাকে, তবে নিচে নতুন ObjectId দিয়ে কুয়েরি করতে হবে
-    const productReviews = await reviewsCollection
-      .find({ productId: productId }) 
-      .sort({ createdAt: -1 })
-      .toArray();
-
-    res.status(200).json({ success: true, data: productReviews });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+        res.status(200).json({ success: true, data: productReviews });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
 
     // ========================================================
     // 📧 Contact Message POST API
