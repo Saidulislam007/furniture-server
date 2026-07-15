@@ -300,6 +300,13 @@ async function run(): Promise<void> {
     // ========================================================
     app.post('/api/v1/cart', async (req: Request, res: Response): Promise<void> => {
       try {
+        console.log("========== NEW VERSION ==========");
+  console.log(req.body);
+
+  return res.json({
+    success: true,
+    message: "TEST OK",
+  });
         const cartItem = req.body;
         const query = { userId: String(cartItem.userId), productId: String(cartItem.productId) };
         const existingItem = await cartCollection.findOne(query);
