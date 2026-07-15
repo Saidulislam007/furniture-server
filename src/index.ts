@@ -17,16 +17,10 @@ app.use(express.json());
 const allowedOrigins = [process.env.FRONTEND_URL]; 
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true, 
+  origin: "*", // সাময়িকভাবে সব ডোমেইন এলাউ করুন
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 // Base Health Check Route
@@ -374,14 +368,15 @@ app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
     // ========================================================
     // 🚚 Deliveries GET API By User ID
     // ========================================================
-    app.get('/api/v1/deliveries/:userId', async (req: Request, res: Response): Promise<void> => {
-      try {
-        const result = await deliveriesCollection.find({ userId: req.params.userId }).toArray();
+    // deliveries GET API - এটি থাকলে ব্রাউজারে ডাটা দেখতে পাবেন
+app.get('/api/v1/deliveries', async (req: Request, res: Response) => {
+    try {
+        const result = await deliveriesCollection.find({}).toArray();
         res.status(200).json({ success: true, data: result });
-      } catch (error: any) {
+    } catch (error: any) {
         res.status(500).json({ success: false, error: error.message });
-      }
-    });
+    }
+});
 
     // ========================================================
     // 🚚 Deliveries Status PATCH API
