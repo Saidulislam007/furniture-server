@@ -344,20 +344,34 @@ async function run(): Promise<void> {
 // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
 app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
     try {
-        const payload = req.body;
-        // ডাটাবেজ কালেকশন চেক
-        if (!deliveriesCollection) {
-            return res.status(500).json({ success: false, error: "Database not connected" });
-        }
-        
-        const result = await deliveriesCollection.insertOne({
-            ...payload,
+        // রিকোয়েস্ট আসার সাথে সাথে কনসোল লগ করুন
+        console.log("Raw Body:", req.body);
+
+        // সরাসরি রিকোয়েস্ট বডি ব্যবহার করুন
+        const deliveryData = {
+            userId: req.body.userId,
+            userName: req.body.userName,
+            userEmail: req.body.userEmail,
+            productId: req.body.productId,
+            title: req.body.title,
+            price: Number(req.body.price),
+            deliveryFee: Number(req.body.deliveryFee || 0),
+            image: req.body.image,
+            color: req.body.color,
             status: "Pending",
             createdAt: new Date()
-        });
-        
+        };
+
+        // যদি deliveriesCollection undefined হয়, তবেই এরর দিবে
+        if (!deliveriesCollection) {
+            return res.status(500).json({ error: "DB Collection not found" });
+        }
+
+        const result = await deliveriesCollection.insertOne(deliveryData);
         res.status(201).json({ success: true, insertedId: result.insertedId });
+
     } catch (error: any) {
+        console.error("SERVER CRASH:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
