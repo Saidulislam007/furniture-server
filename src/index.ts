@@ -342,35 +342,37 @@ async function run(): Promise<void> {
 // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
 app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
     try {
-        // রিকোয়েস্টের বডি লগ করুন
-        console.log("📥 Raw Payload from Frontend:", req.body);
+        console.log("📥 Incoming Payload:", req.body);
 
-        const { userId, userName, userEmail, productId, title, price, deliveryFee, image, color } = req.body;
-
-        // ডিবাগging: যদি userId না পাওয়া যায়
-        if (!userId) {
-            console.error("❌ Error: userId is missing in the payload!");
-            return res.status(400).json({ success: false, error: "userId is missing" });
-        }
-
+        // ডাটাবেজে পাঠানোর আগে ডাটা ক্লিন করা
         const deliveryData = {
-            userId,
-            userName,
-            userEmail,
-            productId,
-            title,
-            price: Number(price),
-            deliveryFee: Number(deliveryFee),
-            image,
-            color,
+            // যদি userId অবজেক্ট হয় (যেমন $oid), তবে সেটি স্ট্রিংয়ে কনভার্ট করে নিন
+            userId: typeof req.body.userId === 'object' 
+                ? (req.body.userId.$oid || req.body.userId.toString()) 
+                : req.body.userId,
+            
+            userName: req.body.userName || "Unknown",
+            userEmail: req.body.userEmail,
+            productId: req.body.productId,
+            title: req.body.title,
+            price: Number(req.body.price),
+            deliveryFee: Number(req.body.deliveryFee || 0),
+            image: req.body.image,
+            color: req.body.color,
             status: "Pending",
             createdAt: new Date()
         };
 
+        // সেফটি চেক: userId না থাকলে এরর দিন
+        if (!deliveryData.userId) {
+            return res.status(400).json({ success: false, error: "userId is missing!" });
+        }
+
         const result = await deliveriesCollection.insertOne(deliveryData);
+        
         res.status(201).json({ success: true, insertedId: result.insertedId });
     } catch (error: any) {
-        console.error("❌ Database Error:", error);
+        console.error("❌ MongoDB Insert Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
