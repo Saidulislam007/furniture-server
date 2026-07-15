@@ -97,7 +97,7 @@ async function run(): Promise<void> {
           ]
         };
 
-        // 🔍 ক্যাসকেড প্রটেকশন: আপডেট করার এক মিলি-সেকেন্ড আগে ডাটাবেজের কারেন্ট ওল্ড স্ন্যাপশট নেওয়া
+        // 🔍 ক্যাসকেড প্রটেকশন: আপডেট করার এক মিলি-সেকেন্ড আগে ডাটাবেজের কারেন্ট ওল্ড স্ন্যাপশট নেওয়া
         const dbUserSnapshot = await usersCollection.findOne(userQuery as any);
         if (!dbUserSnapshot) {
           res.status(404).json({ success: false, error: "User profile identity not found." });
@@ -197,13 +197,35 @@ async function run(): Promise<void> {
     });
 
     // ========================================================
-    // 🛋️ Furniture GET API
+    // 🛋️ Furniture GET API (সার্বজনীন ক্যাটালগ লিস্ট ভাই)
     // ========================================================
     app.get('/api/v1/furniture', async (req: Request, res: Response): Promise<void> => {
       try {
         const result = await furnitureCollection.find({}).sort({ _id: -1 }).toArray();
         res.status(200).json({ success: true, count: result.length, data: result });
       } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // ========================================================
+    // 🛋️ 🟢 নতুন ফিক্স: Furniture GET API (সিঙ্গেল প্রোডাক্ট আইডি দিয়ে ডাটা আনা ভাই)
+    // ========================================================
+    app.get('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+          res.status(400).json({ success: false, error: "Invalid product specification node ID." });
+          return;
+        }
+        const singleProduct = await furnitureCollection.findOne({ _id: new ObjectId(id) });
+        if (!singleProduct) {
+          res.status(404).json({ success: false, error: "Target asset record not found." });
+          return;
+        }
+        res.status(200).json({ success: true, data: singleProduct });
+      } catch (error: any) {
+        console.error("❌ Failed to fetch single furniture node:", error);
         res.status(500).json({ success: false, error: error.message });
       }
     });
@@ -225,31 +247,64 @@ async function run(): Promise<void> {
       }
     });
 
-    // ========================================================
-    // 🛋️ Furniture EDIT PATCH API
+
     // ========================================================
     app.patch('/api/v1/furniture/:id', async (req: Request, res: Response): Promise<void> => {
       try {
         const id = req.params.id;
         const updatedData = req.body;
+
+        if (!id) {
+          res.status(400).json({ success: false, error: "Product node ID is required." });
+          return;
+        }
+
+        if (!updatedData || Object.keys(updatedData).length === 0) {
+          res.status(400).json({ success: false, error: "Update payload matrix cannot be empty." });
+          return;
+        }
+
+        // 🛠️ আইডি ক্লিনআপ এবং টাইপ কাস্টিং লক ভাই
         delete updatedData._id; 
+        if (updatedData.price !== undefined) updatedData.price = Number(updatedData.price);
+        if (updatedData.deliveryFee !== undefined) updatedData.deliveryFee = Number(updatedData.deliveryFee);
+        if (updatedData.stock !== undefined) updatedData.stock = Number(updatedData.stock);
 
-        if (updatedData.price) updatedData.price = Number(updatedData.price);
-        if (updatedData.deliveryFee) updatedData.deliveryFee = Number(updatedData.deliveryFee);
-        if (updatedData.stock) updatedData.stock = Number(updatedData.stock);
+        // 🔒 🟢 অরিজিনাল ফিক্স: মঙ্গোডিবি নেটিভ ড্রাইভারে $oid হ্যান্ডেল করার জন্য আইডি কুয়েরি লক করা হলো ভাই
+        let queryTarget = {};
+        if (ObjectId.isValid(id)) {
+          queryTarget = { _id: new ObjectId(id) };
+        } else {
+          queryTarget = { _id: id }; // সেফগার্ড হিসেবে প্লেইন স্ট্রিং আইডি চেকিং
+        }
 
+        // 🎯 ਮঙ্গোডিবিতে ডিরেক্ট অবজেক্ট আইডি কুয়েরি দিয়ে ডাটা পরিবর্তন ভাই
         const result = await furnitureCollection.updateOne(
-          { _id: new ObjectId(id) },
+          queryTarget,
           { $set: updatedData }
         );
 
-        if (result.matchedCount === 1) {
-          res.status(200).json({ success: true, message: "Asset updated successfully." });
-        } else {
-          res.status(404).json({ success: false, error: "Asset specifications missing." });
+        // 🔍 যদি ডাটাবেজে এই আইডির কোনো ফার্নিচার ম্যাচ না করে
+        if (result.matchedCount === 0) {
+          console.log(`⚠️ Database unmatched for ID: ${id}`); // ব্যাকএন্ড কনসোল ট্র্যাকিং
+          res.status(404).json({ 
+            success: false, 
+            error: "Target asset record not found in central registry." 
+          });
+          return;
         }
+
+        res.status(200).json({ 
+          success: true, 
+          message: "Asset updated successfully." 
+        });
+
       } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error("❌ Critical failure in furniture TS PATCH pipeline:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal Server Error" 
+        });
       }
     });
 
@@ -372,93 +427,130 @@ async function run(): Promise<void> {
     });
 
     // ========================================================
-    // 📝 Reviews POST API
+    // 📝 Reviews Universal GET API (🚀 🟢 নতুন ফিক্স: সব রিভিউ একসাথে নিয়ে আসা ভাই)
     // ========================================================
-    app.post('/api/v1/reviews', async (req: Request, res: Response): Promise<void> => {
+    app.get('/api/v1/reviews', async (req: Request, res: Response): Promise<void> => {
       try {
-        const reviewPayload = req.body;
-        if (!reviewPayload.userId || !reviewPayload.productId || !reviewPayload.rating || !reviewPayload.comment?.trim()) {
-          res.status(400).json({ success: false, error: "Missing required testimonial payload nodes." });
-          return;
-        }
-
-        await reviewsCollection.insertOne({
-          userId: reviewPayload.userId,
-          userEmail: reviewPayload.userEmail || "N/A",
-          userName: reviewPayload.userName || "Anonymous User",
-          productId: reviewPayload.productId,
-          productName: reviewPayload.productName || "Curated Asset Architecture",
-          rating: Number(reviewPayload.rating),
-          comment: reviewPayload.comment.trim(),
-          createdAt: new Date()
-        });
-
-        res.status(201).json({ success: true, message: "Product testimonial record deployed successfully." });
+        const allReviews = await reviewsCollection.find({}).sort({ createdAt: -1 }).toArray();
+        res.status(200).json({ success: true, data: allReviews });
       } catch (error: any) {
+        console.error("❌ Failed to pull universal review archives:", error);
         res.status(500).json({ success: false, error: error.message });
       }
     });
 
-
-
-    app.post('/api/v1/contact', async (req: Request, res: Response): Promise<void> => {
+    // ========================================================
+    // 📝 Reviews POST API
+    // ========================================================
+app.post('/api/v1/reviews', async (req: Request, res: Response): Promise<void> => {
   try {
-    const contactPayload = req.body;
+    const reviewPayload = req.body;
+    
+    // লগ দিয়ে চেক করুন আপনার ফ্রন্টএন্ড থেকে ঠিক কী আইডি আসছে
+    console.log("সাবমিট করা আইডি:", reviewPayload.productId);
 
-    // 🔒 এক্সপ্রেস স্ট্যান্ডার্ডে স্ট্রিক্ট ব্যাকএন্ড ভ্যালিডেশন গার্ড ভাই
-    if (!contactPayload.name || !contactPayload.email || !contactPayload.subject || !contactPayload.message) {
-      res.status(400).json({ 
-        success: false, 
-        error: "Missing required contact specification fields." 
-      });
-      return;
-    }
+    // ফিক্স: যদি আইডিটি অবজেক্ট হিসেবে আসে (যেমন $oid), তবে সেটি স্ট্রিংয়ে কনভার্ট করুন
+    const finalProductId = typeof reviewPayload.productId === 'object' 
+                           ? reviewPayload.productId.$oid || reviewPayload.productId.toString() 
+                           : reviewPayload.productId;
 
-    // 🎯 মঙ্গোডিবি কালেকশনে টাইমস্ট্যাম্প এবং ডিফল্ট স্ট্যাটাস সহ ডেটা ইনসার্ট করা হলো ভাই
-  await contactMessagesCollection.insertOne({
-  name: contactPayload.name,
-  email: contactPayload.email,
-  phone: contactPayload.phone, // 👈 ব্যাকএন্ডের মঙ্গোডিবি অবজেক্টেও এটি সেভ হবে
-  subject: contactPayload.subject,
-  message: contactPayload.message,
-  status: "Unread",
-  createdAt: new Date()
-});
-
-    res.status(201).json({ 
-      success: true, 
-      message: "Message transmitted and ledger record deployed successfully." 
+    await reviewsCollection.insertOne({
+      userId: reviewPayload.userId,
+      userEmail: reviewPayload.userEmail || "N/A",
+      userName: reviewPayload.userName || "Anonymous User",
+      productId: finalProductId, // এখানে নিশ্চিত করুন স্ট্রিং আইডি যাচ্ছে
+      productName: reviewPayload.productName || "Curated Asset Architecture",
+      rating: Number(reviewPayload.rating),
+      comment: reviewPayload.comment.trim(),
+      createdAt: new Date()
     });
+
+    res.status(201).json({ success: true, message: "Review deployed successfully." });
   } catch (error: any) {
-    console.error("❌ Critical failure in contact post pipeline:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-app.get('/api/v1/contact', async (req: Request, res: Response): Promise<void> => {
+    // ========================================================
+    // 📝 Reviews GET API By Product ID
+    // ========================================================
+  app.get('/api/v1/reviews/:productId', async (req: Request, res: Response): Promise<void> => {
   try {
-    // 🎯 মঙ্গোডিবি থেকে সব মেসেজ নতুন থেকে পুরানো ক্রোনোলজিক্যাল অর্ডারে সর্ট করে অ্যারেতে কনভার্ট করা হলো ভাই
-    const messages = await contactMessagesCollection
-      .find({})
+    const { productId } = req.params;
+
+    // ডাটাবেজে productId স্ট্রিং হিসেবে থাকলে এটি হুবহু ম্যাচ করবে
+    // যদি ObjectId হিসেবে থাকে, তবে নিচে নতুন ObjectId দিয়ে কুয়েরি করতে হবে
+    const productReviews = await reviewsCollection
+      .find({ productId: productId }) 
       .sort({ createdAt: -1 })
       .toArray();
 
-    res.status(200).json({ 
-      success: true, 
-      data: messages 
-    });
+    res.status(200).json({ success: true, data: productReviews });
   } catch (error: any) {
-    console.error("❌ Failed to pull contact ledger logs:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
+    // ========================================================
+    // 📧 Contact Message POST API
+    // ========================================================
+    app.post('/api/v1/contact', async (req: Request, res: Response): Promise<void> => {
+      try {
+        const contactPayload = req.body;
+
+        if (!contactPayload.name || !contactPayload.email || !contactPayload.subject || !contactPayload.message) {
+          res.status(400).json({ 
+            success: false, 
+            error: "Missing required contact specification fields." 
+          });
+          return;
+        }
+
+        await contactMessagesCollection.insertOne({
+          name: contactPayload.name,
+          email: contactPayload.email,
+          phone: contactPayload.phone,
+          subject: contactPayload.subject,
+          message: contactPayload.message,
+          status: "Unread",
+          createdAt: new Date()
+        });
+
+        res.status(201).json({ 
+          success: true, 
+          message: "Message transmitted and ledger record deployed successfully." 
+        });
+      } catch (error: any) {
+        console.error("❌ Critical failure in contact post pipeline:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    // ========================================================
+    // 📧 Contact Message GET API
+    // ========================================================
+    app.get('/api/v1/contact', async (req: Request, res: Response): Promise<void> => {
+      try {
+        const messages = await contactMessagesCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.status(200).json({ 
+          success: true, 
+          data: messages 
+        });
+      } catch (error: any) {
+        console.error("❌ Failed to pull contact ledger logs:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
