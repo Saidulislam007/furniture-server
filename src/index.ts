@@ -78,6 +78,9 @@ console.log("✅ Registering PATCH /api/v1/users/:id");
   console.log("🔥 PATCH USER HIT");
   console.log("Params:", req.params);
   console.log("Body:", req.body);
+  const id = req.params.id;
+
+  console.log("Session ID:", id);
 
   try {
     const userId = String(req.params.id);
@@ -183,6 +186,31 @@ console.log("✅ Registering PATCH /api/v1/users/:id");
       error: error.message
     });
   }
+});
+
+
+app.get('/api/v1/users', async (req: Request, res: Response) => {
+    try {
+        // ১. কালেকশন চেক
+        if (!usersCollection) {
+            return res.status(500).json({ success: false, error: "Users database collection not initialized" });
+        }
+
+        // ২. সমস্ত ইউজার ডাটা রিট্রিভ করা
+        // প্রোডাকশন লেভেলে অনেক ডাটা থাকলে .limit() ব্যবহার করা ভালো
+        const users = await usersCollection.find({}).toArray();
+
+        // ৩. সফল রেসপন্স পাঠানো
+        res.status(200).json({ 
+            success: true, 
+            count: users.length,
+            data: users 
+        });
+
+    } catch (error: any) {
+        console.error("❌ Users GET Error:", error);
+        res.status(500).json({ success: false, error: "Internal server error during user governance metrics retrieval." });
+    }
 });
 
     // ========================================================
