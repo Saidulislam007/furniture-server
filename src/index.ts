@@ -343,25 +343,21 @@ async function run(): Promise<void> {
     // ========================================================
 // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
 app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
-    // ১. প্রথমেই দেখুন সার্ভার বডি পায় কি না
-    console.log("DEBUG: Request received at server");
-    
     try {
-        // ২. ডাটাবেজ কালেকশন চেক (গ্লোবাল ভেরিয়েবল ব্যবহার করছি)
+        const payload = req.body;
+        // ডাটাবেজ কালেকশন চেক
         if (!deliveriesCollection) {
-            console.error("CRITICAL: deliveriesCollection is NOT defined!");
-            return res.status(500).json({ error: "DB Collection not defined" });
+            return res.status(500).json({ success: false, error: "Database not connected" });
         }
-
-        // ৩. একদম সিম্পল ইনসার্ট (কোনো কনভার্সন ছাড়া)
-        const result = await deliveriesCollection.insertOne(req.body);
-
-        console.log("SUCCESS: Order inserted with ID:", result.insertedId);
+        
+        const result = await deliveriesCollection.insertOne({
+            ...payload,
+            status: "Pending",
+            createdAt: new Date()
+        });
+        
         res.status(201).json({ success: true, insertedId: result.insertedId });
-
     } catch (error: any) {
-        // ৪. এররটি যেন একদম পরিষ্কার আসে
-        console.error("SERVER ERROR:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });
