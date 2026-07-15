@@ -343,38 +343,25 @@ async function run(): Promise<void> {
     // ========================================================
 // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
 app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
+    // ১. প্রথমেই দেখুন সার্ভার বডি পায় কি না
+    console.log("DEBUG: Request received at server");
+    
     try {
-        console.log("📥 Incoming Payload:", req.body);
-
-        // ডাটাবেজে পাঠানোর আগে ডাটা ক্লিন করা
-        const deliveryData = {
-            // যদি userId অবজেক্ট হয় (যেমন $oid), তবে সেটি স্ট্রিংয়ে কনভার্ট করে নিন
-            userId: typeof req.body.userId === 'object' 
-                ? (req.body.userId.$oid || req.body.userId.toString()) 
-                : req.body.userId,
-            
-            userName: req.body.userName || "Unknown",
-            userEmail: req.body.userEmail,
-            productId: req.body.productId,
-            title: req.body.title,
-            price: Number(req.body.price),
-            deliveryFee: Number(req.body.deliveryFee || 0),
-            image: req.body.image,
-            color: req.body.color,
-            status: "Pending",
-            createdAt: new Date()
-        };
-
-        // সেফটি চেক: userId না থাকলে এরর দিন
-        if (!deliveryData.userId) {
-            return res.status(400).json({ success: false, error: "userId is missing!" });
+        // ২. ডাটাবেজ কালেকশন চেক (গ্লোবাল ভেরিয়েবল ব্যবহার করছি)
+        if (!deliveriesCollection) {
+            console.error("CRITICAL: deliveriesCollection is NOT defined!");
+            return res.status(500).json({ error: "DB Collection not defined" });
         }
 
-        const result = await deliveriesCollection.insertOne(deliveryData);
-        
+        // ৩. একদম সিম্পল ইনসার্ট (কোনো কনভার্সন ছাড়া)
+        const result = await deliveriesCollection.insertOne(req.body);
+
+        console.log("SUCCESS: Order inserted with ID:", result.insertedId);
         res.status(201).json({ success: true, insertedId: result.insertedId });
+
     } catch (error: any) {
-        console.error("❌ MongoDB Insert Error:", error);
+        // ৪. এররটি যেন একদম পরিষ্কার আসে
+        console.error("SERVER ERROR:", error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });
