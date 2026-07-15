@@ -418,6 +418,32 @@ async function run() {
                 res.status(500).json({ success: false, error: error.message });
             }
         });
+        app.get('/api/v1/deliveries/:userId', async (req, res) => {
+            try {
+                const { userId } = req.params;
+                // ১. ভ্যালিডেশন
+                if (!userId) {
+                    return res.status(400).json({ success: false, error: "User ID is required" });
+                }
+                // ২. কালেকশন চেক
+                if (!deliveriesCollection) {
+                    return res.status(500).json({ success: false, error: "Deliveries database collection not initialized" });
+                }
+                // ৩. নির্দিষ্ট ইউজারের ডেলিভারি লগগুলো খোঁজা
+                // নোট: যদি ডাটাবেসে userId স্ট্রিং হিসেবে থাকে তবে সরাসরি এটি কাজ করবে
+                const userDeliveries = await deliveriesCollection.find({ userId: userId }).toArray();
+                // ৪. সফল রেসপন্স পাঠানো
+                res.status(200).json({
+                    success: true,
+                    count: userDeliveries.length,
+                    data: userDeliveries
+                });
+            }
+            catch (error) {
+                console.error("❌ Deliveries GET Error:", error);
+                res.status(500).json({ success: false, error: "Internal server error during delivery retrieval." });
+            }
+        });
         // ========================================================
         // 🚚 Deliveries Status PATCH API
         // ========================================================
