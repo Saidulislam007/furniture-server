@@ -76,140 +76,76 @@ console.log("✅ Registering PATCH /api/v1/users/:id");
     // ========================================================
     // 🚀 ইউজারের প্রোফাইল আইডেন্টিটি এবং অল সাব-ক্যাটালগ ক্যাসকেড PATCH API
     // ========================================================
- app.patch("/api/v1/users/:id", async (req: Request, res: Response): Promise<void> => {
-  console.log("🔥 PATCH USER HIT");
-  console.log("Params:", req.params);
-  console.log("Body:", req.body);
-
+app.patch("/api/v1/users/:id", async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = String(req.params.id).trim();
-    const { name, email, image } = req.body;
+    const { name, email, image, role } = req.body;
 
-    console.log("🆔 Session ID:", userId);
-
-    if (!name || !email) {
-      res.status(400).json({
-        success: false,
-        error: "Legal Name and Secure Email are required.",
-      });
-      return;
-    }
-
-    // ==========================
-    // DEBUG USERS COLLECTION
-    // ==========================
-    const allUsers = await usersCollection
-      .find({}, { projection: { _id: 1, email: 1, name: 1 } })
-      .toArray();
-
-    console.log("📦 USERS COLLECTION:");
-    console.log(allUsers);
-
-    // ==========================
-    // FIND USER
-    // ==========================
+    // ১. ইউজার খুঁজে বের করা
     let dbUserSnapshot = null;
-
-    // Try ObjectId
     if (ObjectId.isValid(userId)) {
-      dbUserSnapshot = await usersCollection.findOne({
-        _id: new ObjectId(userId),
-      });
-
-      console.log("🔍 Search By ObjectId:", dbUserSnapshot);
+      dbUserSnapshot = await usersCollection.findOne({ _id: new ObjectId(userId) });
     }
-
-    // Try String _id
+    
     if (!dbUserSnapshot) {
-  dbUserSnapshot = await usersCollection.findOne({
-    _id: userId as any,
-  });
-
-  console.log("🔍 Search By String:", dbUserSnapshot);
-}
-
-    // Try Email
-    if (!dbUserSnapshot) {
-      dbUserSnapshot = await usersCollection.findOne({
-        email: email.trim().toLowerCase(),
-      });
-
-      console.log("🔍 Search By Email:", dbUserSnapshot);
-    }
-
-    if (!dbUserSnapshot) {
-      return void res.status(404).json({
-        success: false,
-        error: "User profile identity not found.",
-      });
+      res.status(404).json({ success: false, error: "User profile identity not found." });
+      return;
     }
 
     const dbOldEmail = dbUserSnapshot.email;
     const dbOldName = dbUserSnapshot.name;
 
-    // ==========================
-    // UPDATE USER
-    // ==========================
-    await usersCollection.updateOne(
+    // ২. আপডেট পে-লোড তৈরি (প্রোফাইল + রোল একসাথে)
+    const updateSet: any = {
+      updatedAt: new Date(),
+    };
+
+    if (name) updateSet.name = name.trim();
+    if (email) updateSet.email = email.trim().toLowerCase();
+    if (image !== undefined) updateSet.image = image;
+    if (role) updateSet.role = role; // রোল আপডেট
+
+    // ৩. মূল ইউজার আপডেট (একবার কল করা যথেষ্ট)
+    const updateResult = await usersCollection.updateOne(
       { _id: dbUserSnapshot._id },
-      {
+      { $set: updateSet }
+    );
+
+    console.log("Matched Count:", updateResult.matchedCount);
+    console.log("Modified Count:", updateResult.modifiedCount);
+
+    if (updateResult.matchedCount === 0) {
+      res.status(404).json({ success: false, error: "User not found during update!" });
+      return;
+    }
+
+    // ৪. Cascade Update (যদি নাম বা ইমেইল পরিবর্তিত হয়)
+    if (name || email) {
+      const subCollectionFilter = {
+        $or: [
+          { userId: userId },
+          { userEmail: dbOldEmail },
+          { userName: dbOldName },
+        ],
+      };
+
+      const updatePayload = {
         $set: {
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
-          image: image || "",
-          updatedAt: new Date(),
+          userName: name ? name.trim() : dbOldName,
+          userEmail: email ? email.trim().toLowerCase() : dbOldEmail,
         },
-      }
-    );
+      };
 
-    // ==========================
-    // CASCADE UPDATE
-    // ==========================
-    const subCollectionFilter = {
-      $or: [
-        { userId },
-        { userEmail: dbOldEmail },
-        { userName: dbOldName },
-      ],
-    };
+      if (reviewsCollection) await reviewsCollection.updateMany(subCollectionFilter, updatePayload);
+      if (deliveriesCollection) await deliveriesCollection.updateMany(subCollectionFilter, updatePayload);
+      if (cartCollection) await cartCollection.updateMany(subCollectionFilter, updatePayload);
+    }
 
-    const updatePayload = {
-      $set: {
-        userName: name.trim(),
-        userEmail: email.trim().toLowerCase(),
-      },
-    };
+    res.status(200).json({ success: true, message: "Profile and role synchronized." });
 
-    const reviewRes = await reviewsCollection.updateMany(
-      subCollectionFilter,
-      updatePayload
-    );
-
-    const deliveryRes = await deliveriesCollection.updateMany(
-      subCollectionFilter,
-      updatePayload
-    );
-
-    const cartRes = await cartCollection.updateMany(
-      subCollectionFilter,
-      updatePayload
-    );
-
-    console.log("✅ Reviews:", reviewRes.modifiedCount);
-    console.log("✅ Deliveries:", deliveryRes.modifiedCount);
-    console.log("✅ Cart:", cartRes.modifiedCount);
-
-    res.status(200).json({
-      success: true,
-      message: "Profile updated successfully.",
-    });
   } catch (error: any) {
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    console.error("❌ PATCH Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
