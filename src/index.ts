@@ -341,26 +341,35 @@ async function run(): Promise<void> {
     // ========================================================
 // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
 app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
-    try {
-        console.log("📥 Incoming Request Body:", req.body); // সার্ভার লগে ডাটা চেক করুন
+    // দেখি সার্ভার আদৌ কোনো ডাটা পাচ্ছে কি না
+    console.log("📥 Raw Request Body at Server:", JSON.stringify(req.body));
 
-        // ১. সেফটি চেক: যদি বডি না থাকে
-        if (!req.body || typeof req.body !== 'object') {
-            return res.status(400).json({ success: false, error: "Invalid or empty request body" });
+    try {
+        const { userId, productId, title, price, userName, userEmail } = req.body;
+
+        // ভ্যালিডেশন চেক: যদি ডাটা না আসে
+        if (!userId || !productId) {
+            console.error("❌ Validation Failed: Missing userId or productId");
+            return res.status(400).json({ 
+                success: false, 
+                error: "Missing fields: userId and productId are required!" 
+            });
         }
 
-        // ২. ডাটাবেজে ইনসার্ট (সরাসরি req.body ব্যবহার করছি)
-        // ensure deliveriesCollection is defined as a global collection
         const result = await deliveriesCollection.insertOne({
-            ...req.body,
+            userId,
+            userName,
+            userEmail,
+            productId,
+            title,
+            price,
             status: "Pending",
             createdAt: new Date()
         });
 
-        console.log("✅ Data successfully saved with ID:", result.insertedId);
         res.status(201).json({ success: true, insertedId: result.insertedId });
     } catch (error: any) {
-        console.error("❌ MongoDB Insert Error:", error);
+        console.error("❌ Database Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
