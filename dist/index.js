@@ -320,6 +320,46 @@ async function run() {
                 });
             }
         });
+        app.post('/api/v1/cart', async (req, res) => {
+            try {
+                const { userId, productId, title, price, image, color, userName, userEmail } = req.body;
+                // ১. ভ্যালিডেশন চেক
+                if (!userId || !productId) {
+                    return res.status(400).json({ success: false, error: "Missing required fields (userId, productId)" });
+                }
+                // ২. কার্ট কালেকশন চেক করুন
+                if (!cartCollection) {
+                    return res.status(500).json({ success: false, error: "Cart database collection not initialized" });
+                }
+                // ৩. ডুপ্লিকেট চেক (ইউজার এবং প্রোডাক্ট আইডি দিয়ে চেক করা)
+                const existingItem = await cartCollection.findOne({ userId, productId });
+                if (existingItem) {
+                    return res.status(409).json({ success: false, error: "This product is already in your cart matrix." });
+                }
+                // ৪. কার্টে ইনসার্ট করা
+                const cartItem = {
+                    userId,
+                    userName,
+                    userEmail,
+                    productId,
+                    title,
+                    price: Number(price),
+                    image,
+                    color,
+                    addedAt: new Date()
+                };
+                const result = await cartCollection.insertOne(cartItem);
+                res.status(201).json({
+                    success: true,
+                    message: "Asset committed to cart node successfully.",
+                    insertedId: result.insertedId
+                });
+            }
+            catch (error) {
+                console.error("❌ Cart POST Error:", error);
+                res.status(500).json({ success: false, error: "Internal server error during cart synchronization." });
+            }
+        });
         // ========================================================
         // 🛒 Cart GET API By User ID
         // ========================================================
