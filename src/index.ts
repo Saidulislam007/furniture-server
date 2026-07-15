@@ -345,24 +345,31 @@ async function run(): Promise<void> {
     // ========================================================
     // 🚚 Deliveries POST API (ডুপ্লিকেট ক্লিন করে পারফেক্ট করা হলো ভাই)
     // ========================================================
-    app.post('/api/v1/deliveries', async (req: Request, res: Response): Promise<void> => {
-      try {
-        const deliveryPayload = req.body;
-        console.log("📥 Incoming Deliveries Data:", deliveryPayload);
+// সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
+app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
+    try {
+        console.log("📥 Incoming Request Body:", req.body); // সার্ভার লগে ডাটা চেক করুন
 
+        // ১. সেফটি চেক: যদি বডি না থাকে
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(400).json({ success: false, error: "Invalid or empty request body" });
+        }
+
+        // ২. ডাটাবেজে ইনসার্ট (সরাসরি req.body ব্যবহার করছি)
+        // ensure deliveriesCollection is defined as a global collection
         const result = await deliveriesCollection.insertOne({
-          ...deliveryPayload,
-          status: "Pending",
-          createdAt: new Date()
+            ...req.body,
+            status: "Pending",
+            createdAt: new Date()
         });
 
-        console.log("✅ Order Data inserted with ID:", result.insertedId);
-        res.status(201).json({ success: true, message: "Order processed successfully.", insertedId: result.insertedId });
-      } catch (error: any) {
+        console.log("✅ Data successfully saved with ID:", result.insertedId);
+        res.status(201).json({ success: true, insertedId: result.insertedId });
+    } catch (error: any) {
         console.error("❌ MongoDB Insert Error:", error);
         res.status(500).json({ success: false, error: error.message });
-      }
-    });
+    }
+});
 
     // ========================================================
     // 🚚 Deliveries GET API By User ID
