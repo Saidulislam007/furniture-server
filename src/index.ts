@@ -341,32 +341,33 @@ async function run(): Promise<void> {
     // ========================================================
 // সার্ভারের এই POST রাউটটি ব্যবহার করুন (এটি সব এরর ধরবে)
 app.post('/api/v1/deliveries', async (req: Request, res: Response) => {
-    // দেখি সার্ভার আদৌ কোনো ডাটা পাচ্ছে কি না
-    console.log("📥 Raw Request Body at Server:", JSON.stringify(req.body));
-
     try {
-        const { userId, productId, title, price, userName, userEmail } = req.body;
+        // রিকোয়েস্টের বডি লগ করুন
+        console.log("📥 Raw Payload from Frontend:", req.body);
 
-        // ভ্যালিডেশন চেক: যদি ডাটা না আসে
-        if (!userId || !productId) {
-            console.error("❌ Validation Failed: Missing userId or productId");
-            return res.status(400).json({ 
-                success: false, 
-                error: "Missing fields: userId and productId are required!" 
-            });
+        const { userId, userName, userEmail, productId, title, price, deliveryFee, image, color } = req.body;
+
+        // ডিবাগging: যদি userId না পাওয়া যায়
+        if (!userId) {
+            console.error("❌ Error: userId is missing in the payload!");
+            return res.status(400).json({ success: false, error: "userId is missing" });
         }
 
-        const result = await deliveriesCollection.insertOne({
+        const deliveryData = {
             userId,
             userName,
             userEmail,
             productId,
             title,
-            price,
+            price: Number(price),
+            deliveryFee: Number(deliveryFee),
+            image,
+            color,
             status: "Pending",
             createdAt: new Date()
-        });
+        };
 
+        const result = await deliveriesCollection.insertOne(deliveryData);
         res.status(201).json({ success: true, insertedId: result.insertedId });
     } catch (error: any) {
         console.error("❌ Database Error:", error);
