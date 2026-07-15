@@ -50,89 +50,111 @@ async function run() {
         const deliveriesCollection = exports.database.collection("deliveries");
         const cartCollection = exports.database.collection("cart");
         const furnitureCollection = exports.database.collection("furniture");
-        const usersCollection = exports.database.collection("users");
+        const usersCollection = exports.database.collection("user");
         const reviewsCollection = exports.database.collection("reviews");
         console.log("✅ Registering PATCH /api/v1/users/:id");
         // ========================================================
         // 🚀 ইউজারের প্রোফাইল আইডেন্টিটি এবং অল সাব-ক্যাটালগ ক্যাসকেড PATCH API
         // ========================================================
-        app.patch('/api/v1/users/:id', async (req, res) => {
+        app.patch("/api/v1/users/:id", async (req, res) => {
             console.log("🔥 PATCH USER HIT");
             console.log("Params:", req.params);
             console.log("Body:", req.body);
-            const id = req.params.id;
-            console.log("Session ID:", id);
             try {
-                const userId = String(req.params.id);
+                const userId = String(req.params.id).trim();
                 const { name, email, image } = req.body;
+                console.log("🆔 Session ID:", userId);
                 if (!name || !email) {
                     res.status(400).json({
                         success: false,
-                        error: "Legal Name and Secure Email are required."
+                        error: "Legal Name and Secure Email are required.",
                     });
                     return;
                 }
-                const userQuery = {
-                    $or: [
-                        { _id: userId },
-                        { _id: mongodb_2.ObjectId.isValid(userId) ? new mongodb_2.ObjectId(userId) : userId }
-                    ]
-                };
-                console.log("🔍 User Query:", userQuery);
-                const dbUserSnapshot = await usersCollection.findOne(userQuery);
-                console.log("👤 DB User:", dbUserSnapshot);
-                if (!dbUserSnapshot) {
-                    res.status(404).json({
-                        success: false,
-                        error: "User profile identity not found."
+                // ==========================
+                // DEBUG USERS COLLECTION
+                // ==========================
+                const allUsers = await usersCollection
+                    .find({}, { projection: { _id: 1, email: 1, name: 1 } })
+                    .toArray();
+                console.log("📦 USERS COLLECTION:");
+                console.log(allUsers);
+                // ==========================
+                // FIND USER
+                // ==========================
+                let dbUserSnapshot = null;
+                // Try ObjectId
+                if (mongodb_2.ObjectId.isValid(userId)) {
+                    dbUserSnapshot = await usersCollection.findOne({
+                        _id: new mongodb_2.ObjectId(userId),
                     });
-                    return;
+                    console.log("🔍 Search By ObjectId:", dbUserSnapshot);
+                }
+                // Try String _id
+                if (!dbUserSnapshot) {
+                    dbUserSnapshot = await usersCollection.findOne({
+                        _id: userId,
+                    });
+                    console.log("🔍 Search By String:", dbUserSnapshot);
+                }
+                // Try Email
+                if (!dbUserSnapshot) {
+                    dbUserSnapshot = await usersCollection.findOne({
+                        email: email.trim().toLowerCase(),
+                    });
+                    console.log("🔍 Search By Email:", dbUserSnapshot);
+                }
+                if (!dbUserSnapshot) {
+                    return void res.status(404).json({
+                        success: false,
+                        error: "User profile identity not found.",
+                    });
                 }
                 const dbOldEmail = dbUserSnapshot.email;
                 const dbOldName = dbUserSnapshot.name;
-                await usersCollection.updateOne(userQuery, {
+                // ==========================
+                // UPDATE USER
+                // ==========================
+                await usersCollection.updateOne({ _id: dbUserSnapshot._id }, {
                     $set: {
                         name: name.trim(),
                         email: email.trim().toLowerCase(),
                         image: image || "",
-                        updatedAt: new Date()
-                    }
+                        updatedAt: new Date(),
+                    },
                 });
-                const cleanStringId = String(userId);
-                const nativeObjectId = mongodb_2.ObjectId.isValid(userId)
-                    ? new mongodb_2.ObjectId(userId)
-                    : null;
+                // ==========================
+                // CASCADE UPDATE
+                // ==========================
                 const subCollectionFilter = {
                     $or: [
-                        { userId: cleanStringId },
-                        { userId: userId },
+                        { userId },
                         { userEmail: dbOldEmail },
                         { userName: dbOldName },
-                        ...(nativeObjectId ? [{ userId: nativeObjectId }] : [])
-                    ]
+                    ],
                 };
                 const updatePayload = {
                     $set: {
                         userName: name.trim(),
-                        userEmail: email.trim().toLowerCase()
-                    }
+                        userEmail: email.trim().toLowerCase(),
+                    },
                 };
                 const reviewRes = await reviewsCollection.updateMany(subCollectionFilter, updatePayload);
                 const deliveryRes = await deliveriesCollection.updateMany(subCollectionFilter, updatePayload);
                 const cartRes = await cartCollection.updateMany(subCollectionFilter, updatePayload);
-                console.log(`📊 Cascading Complete -> Reviews: ${reviewRes.modifiedCount} | Deliveries: ${deliveryRes.modifiedCount} | Cart: ${cartRes.modifiedCount}`);
+                console.log("✅ Reviews:", reviewRes.modifiedCount);
+                console.log("✅ Deliveries:", deliveryRes.modifiedCount);
+                console.log("✅ Cart:", cartRes.modifiedCount);
                 res.status(200).json({
                     success: true,
-                    message: "Profile and all linked sub-catalogs synchronized successfully."
+                    message: "Profile updated successfully.",
                 });
             }
             catch (error) {
-                console.error("❌ Critical failure during dynamic string-identity sync:");
                 console.error(error);
-                console.error(error.stack);
                 res.status(500).json({
                     success: false,
-                    error: error.message
+                    error: error.message,
                 });
             }
         });
